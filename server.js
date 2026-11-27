@@ -6,6 +6,7 @@ require("dotenv").config();
 const app = express();
 
 const db = require("./models");
+const CreateRoles = require("./seeders/Role.seeder");
 
 app.use(cors());
 app.use(express.json());
@@ -18,24 +19,30 @@ app.get("/", (req, res) => {
     });
 });
 
+// Register routes
 require("./routes/Auth.routes")(app);
 
-db.sequelize
-    .authenticate()
-    .then(() => {
+async function startServer() {
+    try {
+        await db.sequelize.authenticate();
         console.log("PostgreSQL connected successfully");
 
-        return db.sequelize.sync({ alter: true });
-    })
-    .then(() => {
-        console.log("Tables synchronized successfully");
+        // Ensure RoleMaster exists without altering all tables
+        await db.roleMaster.sync();
+        console.log("RoleMaster table is ready");
+
+        await CreateRoles();
 
         const PORT = process.env.PORT || 9010;
 
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
-    })
-    .catch((error) => {
-        console.error("Database connection error:", error);
-    });
+
+    } catch (error) {
+        console.error("Server startup failed:", error);
+        process.exit(1);
+    }
+}
+
+startServer();

@@ -1,53 +1,86 @@
-
+ 
 const jwt = require("jsonwebtoken");
+const db = require("../models");
 
-module.exports= (req, res, next) => {
-  try {
-    // Step 1: Get authorization header
-    const authHeader = req.headers.authorization;
+module.exports = async (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
 
-    // Step 2: Check whether token exists
-    if (!authHeader) {
-      return res.status(401).json({
-        success: false,
-        message: "Authorization token required"
-      });
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+            return res.status(401).json({
+                success: false,
+                message: "Authorization token required"
+            });
+        }
+
+        const token = authHeader.split(" ")[1];
+
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid authorization format"
+            });
+        }
+
+        const decoded = jwt.verify(
+            token,
+            process.env.JWT_SECRET
+        );
+
+        const user = await db.user.findByPk(decoded.UserID, {
+            attributes: [
+                "UserID",
+                "UserName",
+                "Email",
+                "RoleID",
+                "isActive"
+            ],
+            include: [
+                {
+                    model: db.roleMaster,
+                    as: "role",
+                    attributes: ["RoleID", "RoleName"]
+                }
+            ]
+        });
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "User account not found"
+            });
+        }
+
+        if (!user.isActive) {
+            return res.status(403).json({
+                success: false,
+                message: "Your account is inactive"
+            });
+        }
+
+        if (!user.role) {
+            return res.status(403).json({
+                success: false,
+                message: "User role not found"
+            });
+        }
+
+        req.user = {
+            UserID: user.UserID,
+            UserName: user.UserName,
+            Email: user.Email,
+            RoleID: user.RoleID,
+            Role: user.role.RoleName
+        };
+
+        next();
+
+    } catch (error) {
+        console.error("Authentication Error:", error.message);
+
+        return res.status(401).json({
+            success: false,
+            message: "Invalid or expired token"
+        });
     }
-
-    // Step 3: Extract token from Bearer token
-    const token = authHeader.split(" ")[1];
-
-    if (!authHeader.startsWith("Bearer ") || !token) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid authorization format"
-      });
-    }
-
-    // Step 4: Verify JWT token
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
-
-    // Step 5: Store decoded information
-    req.user = decoded;
-
-    // Step 6: Continue to next middleware/controller
-    next();
-
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired token"
-    });
-  }
 };
-
-
-// Login generates token with UserID.
-// Middleware verifies token.
-// Middleware stores decoded data in req.user.
-// GetProfile reads req.user.UserID.
-
-
